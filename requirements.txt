@@ -1,0 +1,8 @@
+ipynb
+ffmpeg
+Wand
+numba
+fdasrsf
+xlrd
+openpyxl
+umap-learn
