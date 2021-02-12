@@ -6,3 +6,4 @@ fdasrsf
 xlrd
 openpyxl
 umap-learn
+statsmodels==0.12.2
