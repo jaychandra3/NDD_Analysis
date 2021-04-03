@@ -6,6 +6,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import os
 import seaborn as sns
+#from scipy import interpolate
+from scipy.interpolate import UnivariateSpline
 
 ''' for entropy: '''
 from sklearn.neighbors import KernelDensity
@@ -53,8 +55,9 @@ def fileClassification():
 
 '''
     Parameters: curve (curve = np.array([x, y]), where x and y are the x & y coordinates of drawing), n (desired number of data points)
-    smoothing_factor (currently set to 10000 (?))
+    smoothing_factor (currently set to 10000, right?)
 '''
+
 
 def smoothCurveFeature(curve, n, smoothing_factor):
     sx = interpolate.UnivariateSpline(np.arange(curve.shape[1]), curve[0,:], k=4)
