@@ -6,8 +6,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 import os
 import seaborn as sns
-#from scipy import interpolate
-from scipy.interpolate import UnivariateSpline
+from scipy import interpolate
+import scipy
+import statistics
+from scipy.signal import argrelextrema
 
 ''' for entropy: '''
 from sklearn.neighbors import KernelDensity
@@ -20,7 +22,23 @@ from scipy.stats import kurtosis
 from scipy import signal as scipysig
 
 ''' for regression features'''
-import statsmodels.api as smaller
+import statsmodels.api as sm
+
+# =============================================================================================================================
+
+# Normal velocity variability
+
+'''
+    Parameters: NumPy array/Pandas Series of desired velocity
+    Returns: normal velocity variability (double)
+'''
+def nvv(data, timestamps): 
+    sigma_sum = 0
+    for i in range(1, len(data) - 1): 
+        sigma_sum += abs(data[i+1] - data[i])
+    T = max(timestamps) - min(timestamps)
+    nvv = 1/(T * abs(np.mean(data))) * sigma_sum
+    return nvv
 
 # =============================================================================================================================
 
@@ -58,8 +76,7 @@ def fileClassification():
     smoothing_factor (currently set to 10000, right?)
 '''
 
-
-def smoothCurveFeature(curve, n, smoothing_factor):
+def smoothCurveFeature(curve, n, smoothing_factor, df):
     sx = interpolate.UnivariateSpline(np.arange(curve.shape[1]), curve[0,:], k=4)
     sy = interpolate.UnivariateSpline(np.arange(curve.shape[1]), curve[1,:], k=4)
     pressure_f = interpolate.UnivariateSpline(np.arange(np.shape(df[3])[0]), np.array(df[3]), k=4)
@@ -110,12 +127,12 @@ def staticDynamicSplit(df):
     if 0 in df[6].unique(): 
         static_df = df[df[6]==0]
     else: 
-        static_df = pd.DataFrame()
+        static_df = pd.DataFrame(columns = df.columns)
 
     if 1 in df[6].unique(): 
         dynamic_df = df[df[6]==1].reset_index()
     else: 
-        dynamic_df = pd.DataFrame()
+        dynamic_df = pd.DataFrame(columns = df.columns)
 
     return static_df, dynamic_df
 
@@ -179,7 +196,7 @@ def mainSignalThreshold(pressure):
 
 def rateOfInversions(data, time):
     maximum = argrelextrema(np.array(data), np.greater)    
-    return len(maximum[0]) / (max(time) - min(time))
+    return (len(maximum[0]) / (max(time) - min(time)))
 
 # =============================================================================================================================
 
@@ -188,12 +205,12 @@ def rateOfInversions(data, time):
 ''' 
     The following 4 functions are helper functions for the fourierFreqCalc function 
 '''
-def butter_lowpass_filter(data, cut, fs, order=5):
+def butter_lowpass_filter(data, cutoff, fs, order=5):
     b, a = scipysig.butter(order, cutoff, btype='low', analog=False)
     y = scipysig.filtfilt(b, a, data)
     return y
 
-def butter_highpass_filter(data, cut, fs, order=5):
+def butter_highpass_filter(data, cutoff, fs, order=5):
     b, a = scipysig.butter(order, cutoff, btype='high', analog=False)
     y = scipysig.filtfilt(b, a, data)
     return y
@@ -245,7 +262,7 @@ def fourierFreqCalc(data, time):
     Note: curvature - smoothing factor of 100000; velocity - smoothing factor of 10000
 '''
 def regression(data): 
-    model = sm.OLS(pressure, sm.add_constant(np.array(range(len(pressure)))))
+    model = sm.OLS(data, sm.add_constant(np.array(range(len(data)))))
     results = model.fit()
     return results.rsquared, results.params[0], results.params[1], sum(abs(results.resid))
 
