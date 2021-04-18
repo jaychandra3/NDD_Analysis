@@ -254,17 +254,40 @@ def fourierFreqCalc(data, time):
 
 # =============================================================================================================================
 
-# Regression (velocity, curvature & pressure)
+# Regression (used for velocity & pressure)
 
 '''
-    Parmaeter: NumPy array or Pandas series of data (velocity, curvature, or pressure) (use main signal for pressure)
+    Parmaeter: NumPy array or Pandas series of data (velocity or pressure) (use main signal for pressure)
     Returns: R-squared value, X0 constant, X1 constant and sum of residuals of regression
-    Note: curvature - smoothing factor of 100000; velocity - smoothing factor of 10000
+    Note: velocity - smoothing factor of 10000; pressure - original data; no smoothing
 '''
 def regression(data): 
     model = sm.OLS(data, sm.add_constant(np.array(range(len(data)))))
     results = model.fit()
     return results.rsquared, results.params[0], results.params[1], sum(abs(results.resid))
+
+# Logarithmic Regression (used for curvature)
+
+'''
+    Parameter: NumPy array or Pandas series of data (curvature)
+    Returns: R-squared value, X0 constant, X1 constant and sum of residuals of logarithmic regression
+    Note: curvature - smoothing factor of 100000
+'''
+def log_regression(data): 
+    xdata = np.array(range(len(data))) + 1
+    param, cov = scipy.optimize.curve_fit(func_log, xdata, data)
+    residuals = data - func_log(xdata, *param)
+    ss_res = np.sum(residuals**2)
+    ss_tot = np.sum((data - np.mean(data))**2)
+    r_squared = 1 - (ss_res / ss_tot)
+    return r_squared, param[0], param[1], ss_res
+
+'''
+    Helper function for the log_regression function
+    Parameter: x - set of x values; a - 
+'''
+def func_log(x, a, b): 
+    return a + b*np.log(x)
 
 # =============================================================================================================================
 
