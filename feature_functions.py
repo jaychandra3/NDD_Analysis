@@ -74,6 +74,7 @@ def fileClassification():
 '''
     Parameters: curve (curve = np.array([x, y]), where x and y are the x & y coordinates of drawing), n (desired number of data points)
     smoothing_factor (currently set to 10000, right?)
+    Returns: velocity, acceleration, jerk, curvature, pressure
 '''
 
 def smoothCurveFeature(curve, n, smoothing_factor, df):
@@ -115,6 +116,46 @@ def smoothCurveFeature(curve, n, smoothing_factor, df):
     
     # new_curve: interpolated/transformed curve, curv_spline_eval: curvature, curv_dot_eval: rate of change of curvature
     return velocity, acceleration, jerk, curvature, pressure
+
+
+'''
+    Parameters: input R - NumPy array/Pandas series of spiral radius; inputT - NumPy array/Pandas series of theta at each point
+    along the spiral; n - desired number of data points to truncate to; smoothing_factor - currently set to 1000
+    Returns: radius - array of smoothed radius; theta - array of smoothed theta; velocityR (r'(t) - derivative of radius as a function of time); 
+    velocityT (theta'(t)); accelerationR (r''(t)); accelerationT (r''(theta)), drdtheta
+'''
+
+def smoothPolarFeature(inputR, inputT, n, smoothing_factor):
+    sx = interpolate.UnivariateSpline(np.arange(len(inputR)), inputR, k=4)
+    sy = interpolate.UnivariateSpline(np.arange(len(inputT)), inputT, k=4)
+
+    sx.set_smoothing_factor(smoothing_factor)
+    sy.set_smoothing_factor(smoothing_factor)
+
+    sxdot = sx.derivative()
+    sydot = sy.derivative()
+    
+    sxdotdot = sxdot.derivative()
+    sydotdot = sydot.derivative()
+    
+    t = np.linspace(0, len(inputR), n)
+
+    radius = sx(t)
+    theta = sy(t)
+
+    #calculate velocity
+    velocityR = sxdot(t)
+    velocityT = sydot(t)
+
+    #calculate acceleration
+    accelerationR = sxdotdot(t)
+    accelerationT = sydotdot(t)
+
+    #dr/dtheta
+    drdtheta = velocityR/velocityT
+
+    # new_curve: interpolated/transformed curve, curv_spline_eval: curvature, curv_dot_eval: rate of change of curvature
+    return (radius, theta, velocityR, velocityT, accelerationR, accelerationT, drdtheta)
 
 # =============================================================================================================================
 
@@ -232,62 +273,102 @@ def butter_bandpass_filter(data, lowcut, highcut, fs, order=5):
     (df[5] in the case of ParkinsonHW)
     Returns: list of low frequency metric and list of high frequency metric
 '''
-def fourierFreqCalc(data, time): 
-    cutoff = 0.12
+def fourierFreqCalc(data, time, cutoff, low, high): 
     high_frequency_metric = []
     low_frequency_metric = []
+    bandpass_frequency_metric = []
     data = data - np.mean(data)
 
     # time step
-    N = len(time)
-    dt = time[1] - time[0]
+    # dt = time[1] - time[0]
+    dt = 1/60
 
     # apply lowpass filter
-    data_lowpass_filtered = butter_lowpass_filter(data, cutoff, dt)
-    data_highpass_filtered = butter_highpass_filter(data, cutoff, dt)
+    data_lowpass_filtered = butter_lowpass_filter(data, cutoff, 1/dt)
+    data_highpass_filtered = butter_highpass_filter(data, cutoff, 1/dt)
+    data_bandpass_filtered = butter_bandpass_filter(data, low, high, 1/dt)
 
     # calculate
     high_frequency_metric = np.linalg.norm((data_lowpass_filtered - data)/np.linalg.norm(data))
     low_frequency_metric = np.linalg.norm((data_highpass_filtered - data)/np.linalg.norm(data))
+    bandpass_frequency_metric = np.linalg.norm((data_bandpass_filtered - data)/np.linalg.norm(data))
 
-    return low_frequency_metric, high_frequency_metric
+    return low_frequency_metric, high_frequency_metric, bandpass_frequency_metric
 
 # =============================================================================================================================
 
-# Regression (used for velocity & pressure)
+# Linear Regression (used for velocity, pressure, and more)
 
 '''
-    Parmaeter: NumPy array or Pandas series of data (velocity or pressure) (use main signal for pressure)
+    This is for linear regression on some kind of signal versus time
+    Parmaeter: 
+        data - NumPy array or Pandas series of data (velocity/pressure main signal); 
     Returns: R-squared value, X0 constant, X1 constant and sum of residuals of regression
     Note: velocity - smoothing factor of 10000; pressure - original data; no smoothing
 '''
-def regression(data): 
+def time_regression(data):
     model = sm.OLS(data, sm.add_constant(np.array(range(len(data)))))
     results = model.fit()
     return results.rsquared, results.params[0], results.params[1], sum(abs(results.resid))
 
-# Logarithmic Regression (used for curvature)
+'''
+    This is for linear regression on a signal versus another signal
+    Parameter: 
+        data1 & data - NumPy array or Pandas series of data (data1 - dependent variable; data2 - independent variable)
+    Returns: R-squared value, X0 constant, X1 constant and sum of residuals of regression
+'''
+def nontime_regression(data1, data2): 
+    model = sm.OLS(data1, sm.add_constant(data2))
+    results = model.fit()
+    return results.rsquared, results.params[0], results.params[1], sum(abs(results.resid))
+
+# Nonlinear Regression (used for curvature)
 
 '''
-    Parameter: NumPy array or Pandas series of data (curvature)
-    Returns: R-squared value, X0 constant, X1 constant and sum of residuals of logarithmic regression
+    Nonlinear regression on some kind of signal vs. time
+    Parameter: 
+        data - NumPy array or Pandas series of data (curvature)
+        function - function to model the regression after (func_log for log regression, func_inv for regression that fits inversely 
+        proportional relationships)
+    Returns: R-squared value, X0 constant, X1 constant and sum of residuals of the particular type of regression
     Note: curvature - smoothing factor of 100000
 '''
-def log_regression(data): 
+def nonlinear_time_regression(data, function): 
     xdata = np.array(range(len(data))) + 1
-    param, cov = scipy.optimize.curve_fit(func_log, xdata, data)
-    residuals = data - func_log(xdata, *param)
+    param, cov = scipy.optimize.curve_fit(function, xdata, data)
+    residuals = data - function(xdata, *param)
     ss_res = np.sum(residuals**2)
     ss_tot = np.sum((data - np.mean(data))**2)
     r_squared = 1 - (ss_res / ss_tot)
     return r_squared, param[0], param[1], ss_res
 
 '''
-    Helper function for the log_regression function
+    Nonlinear time regression on a signal versus another signal
+    Parameters: 
+        data1 - the dependent variable; data2 - the independent variable 
+    Returns: 
+        R-squared value, X0 constant, X1 constant and sum of residuals of the particular type of regression
+'''
+def nonlinear_nontime_regression(data1, data2, function): 
+    param, cov = scipy.optimize.curve_fit(function, data2, data1)
+    residuals = data1 - function(data2, *param)
+    ss_res = np.sum(residuals**2)
+    ss_tot = np.sum((curvature-np.mean(curvature))**2)
+    r_squared = 1 - (ss_res / ss_tot)
+    return r_squared, param[0], param[1], ss_res
+
+'''
+    Helper function for logarithmic regressions
     Parameter: x - set of x values; a - 
 '''
 def func_log(x, a, b): 
     return a + b*np.log(x)
+
+'''
+    Helper function for regression that fits inversely proportional relationships
+'''
+def func_inv(x, a, b): 
+    return a + (b/x + 10**(-10))
 
 # =============================================================================================================================
 
@@ -302,3 +383,16 @@ def func_log(x, a, b):
     Rising edge range: df[3][risingIndex] - df[3][0] (range of pressure)
     falling_range = df[3][fallingIndex] - df[3][len(df[5])-1] (range of pressure)
 '''
+
+# =============================================================================================================================
+
+# Rates of change of radius & theta
+'''
+    Parameter: NumPy array or Pandas series of data (curvature)
+    Returns: R-squared value, X0 constant, X1 constant and sum of residuals of logarithmic regression
+    Note: curvature - smoothing factor of 100000
+'''
+
+def radius_theta_vel_accel_calc():
+    velocityR, velocityT, accelerationR, accelerationT, drdtheta = smoothPolarFeature(Rs[i], thetaAdd[i][:, 1], n, smoothing_factor)
+    return np.mean(velocityR), np.std(velocityR), np.mean(velocityT), np.std(velocityT), np.mean(drdtheta), np.std(drdtheta)
