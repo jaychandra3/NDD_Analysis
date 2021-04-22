@@ -353,7 +353,7 @@ def nonlinear_nontime_regression(data1, data2, function):
     param, cov = scipy.optimize.curve_fit(function, data2, data1)
     residuals = data1 - function(data2, *param)
     ss_res = np.sum(residuals**2)
-    ss_tot = np.sum((curvature-np.mean(curvature))**2)
+    ss_tot = np.sum((data1-np.mean(data1))**2)
     r_squared = 1 - (ss_res / ss_tot)
     return r_squared, param[0], param[1], ss_res
 
@@ -368,7 +368,7 @@ def func_log(x, a, b):
     Helper function for regression that fits inversely proportional relationships
 '''
 def func_inv(x, a, b): 
-    return a + (b/x + 10**(-10))
+    return a + b/(x + 10**(-10))
 
 # =============================================================================================================================
 
@@ -386,13 +386,3 @@ def func_inv(x, a, b):
 
 # =============================================================================================================================
 
-# Rates of change of radius & theta
-'''
-    Parameter: NumPy array or Pandas series of data (curvature)
-    Returns: R-squared value, X0 constant, X1 constant and sum of residuals of logarithmic regression
-    Note: curvature - smoothing factor of 100000
-'''
-
-def radius_theta_vel_accel_calc():
-    velocityR, velocityT, accelerationR, accelerationT, drdtheta = smoothPolarFeature(Rs[i], thetaAdd[i][:, 1], n, smoothing_factor)
-    return np.mean(velocityR), np.std(velocityR), np.mean(velocityT), np.std(velocityT), np.mean(drdtheta), np.std(drdtheta)
