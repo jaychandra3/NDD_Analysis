@@ -386,3 +386,362 @@ def func_inv(x, a, b):
 
 # =============================================================================================================================
 
+''' Static Preprocessing Function '''
+
+def static_preprocessing(filename): 
+    df = pd.read_csv(filename, sep = ";", header = None)
+
+    # split into static and dynamic dataframes
+    static_df, _ = staticDynamicSplit(df)
+
+    if static_df.count == 0: 
+        return [np.nan for i in list(range(0, 14))]
+
+    static_time = list(static_df[5])
+
+    static_x = static_df[0]
+    static_y = static_df[1]
+    static_curve = np.array([static_x, static_y])
+
+    # radius & theta calculations
+    static_x0 = float(static_x[0])
+    static_y0 = float(static_y[0])
+    static_r = np.array(((static_x - static_x0)**2 + (static_y - static_y0)**2)**(1/2))
+    static_t0 = np.arctan((static_y - static_y0) / (static_x - static_x0+(10**(-10))))
+    static_t = np.cumsum(np.abs(np.diff(np.abs(static_t0))))
+
+    static_velocity, static_acceleration, static_jerk, _, _ = smoothCurveFeature(static_curve, 1000, 10000, static_df)
+    static_velocity = static_velocity[50: len(static_velocity)-50]
+    static_acceleration = static_acceleration[50: len(static_acceleration)-50]
+    static_jerk = static_jerk[50: len(static_jerk)-50]
+
+    # radius & theta rate of change features
+    static_radius, static_theta, static_rdot, static_tdot, static_rdotdot, static_tdotdot, static_drdtheta = smoothPolarFeature(static_r, static_t, 1000, 1000)
+    static_radius = static_radius[50:len(static_radius)-50]
+    static_theta = static_theta[50:len(static_theta)-50]
+    
+    _, _, _, static_curvature, _ = smoothCurveFeature(static_curve, 1000, 100000, static_df)
+    static_curvature = static_curvature[50: len(static_curvature)-50] # got rid of last 100 before
+    
+    static_pressure = static_df[3]
+    static_risingIndex, static_fallingIndex = mainSignalThreshold(static_pressure)
+
+    static_pressure_rising = static_pressure[0:static_risingIndex]
+    static_pressure_main = static_pressure[static_risingIndex:static_fallingIndex]
+    static_pressure_falling = static_pressure[static_fallingIndex:-1]
+
+    static_altitude = static_df[4]
+
+    return (static_time, static_x, static_y, static_radius, static_theta, static_velocity, static_acceleration, 
+    static_jerk, static_rdot, static_tdot, static_rdotdot, static_tdotdot, static_drdtheta, static_curvature, 
+    static_pressure, static_risingIndex, static_fallingIndex, static_pressure_rising, static_pressure_main, 
+    static_pressure_falling, static_altitude)
+
+''' Dynamic Preprocessing Function '''
+
+def dynamic_preprocessing(filename):
+    df = pd.read_csv(filename, sep = ";", header = None)
+
+    # split into static and dynamic dataframes
+    _, dynamic_df = staticDynamicSplit(df)
+
+    if dynamic_df.count == 0:
+        return [np.nan for i in list(range(0, 14))]
+
+    dynamic_time = list(dynamic_df[5])
+
+    dynamic_x = dynamic_df[0]
+    dynamic_y = dynamic_df[1]
+    dynamic_curve = np.array([dynamic_x, dynamic_y])
+
+    # radius & theta calculations
+    dynamic_x0 = float(dynamic_x[0])
+    dynamic_y0 = float(dynamic_y[0])
+    dynamic_r = np.array(((dynamic_x - dynamic_x0)**2 + (dynamic_y - dynamic_y0)**2)**(1/2))
+    dynamic_t0 = np.arctan((dynamic_y - dynamic_y0) / (dynamic_x - dynamic_x0+(10**(-10))))
+    dynamic_t = np.cumsum(np.abs(np.diff(np.abs(dynamic_t0))))
+
+    dynamic_velocity, dynamic_acceleration, dynamic_jerk, _, _ = smoothCurveFeature(dynamic_curve, 1000, 10000, dynamic_df)
+    dynamic_velocity = dynamic_velocity[50: len(dynamic_velocity)-50]
+    dynamic_acceleration = dynamic_acceleration[50: len(dynamic_acceleration)-50]
+    dynamic_jerk = dynamic_jerk[50: len(dynamic_jerk)-50]
+
+    # radius & theta rate of change features
+    dynamic_radius, dynamic_theta, dynamic_rdot, dynamic_tdot, dynamic_rdotdot, dynamic_tdotdot, dynamic_drdtheta = smoothPolarFeature(dynamic_r, dynamic_t, 1000, 1000)
+    dynamic_radius = dynamic_radius[50:len(dynamic_radius)-50]
+    dynamic_theta = dynamic_theta[50:len(dynamic_theta)-50]
+
+    _, _, _, dynamic_curvature, _ = smoothCurveFeature(dynamic_curve, 1000, 100000, dynamic_df)
+    dynamic_curvature = dynamic_curvature[50: len(dynamic_curvature)-50] # got rid of last 100 before
+
+    dynamic_pressure = dynamic_df[3]
+    dynamic_risingIndex, dynamic_fallingIndex = mainSignalThreshold(dynamic_pressure)
+
+    dynamic_pressure_rising = dynamic_pressure[0:dynamic_risingIndex]
+    dynamic_pressure_main = dynamic_pressure[dynamic_risingIndex:dynamic_fallingIndex]
+    dynamic_pressure_falling = dynamic_pressure[dynamic_fallingIndex:-1]
+
+    dynamic_altitude = dynamic_df[4]
+
+    return (dynamic_time, dynamic_x, dynamic_y, dynamic_radius, dynamic_theta, dynamic_velocity, dynamic_acceleration,
+    dynamic_jerk, dynamic_rdot, dynamic_tdot, dynamic_rdotdot, dynamic_tdotdot, dynamic_drdtheta, dynamic_curvature,
+    dynamic_pressure, dynamic_risingIndex, dynamic_fallingIndex, dynamic_pressure_rising, dynamic_pressure_main,
+    dynamic_pressure_falling, dynamic_altitude)
+
+# =============================================================================================================================
+
+'''Calculates all static features '''
+
+def static_calculate(filename): 
+    # entropy:
+    static_x_entropy = entropyCalc(static_x)
+    static_y_entropy = entropyCalc(static_y)
+
+    # kinematic features
+    # velocity features
+    static_velocity_mean = np.mean(static_velocity)
+    static_velocity_std = np.std(static_velocity)
+    static_velocity_max = max(static_velocity)
+    static_velocity_inversion_rate = rateOfInversions(static_velocity, static_time)
+    static_nvv = nvv(static_velocity, static_time)
+
+    # acceleration features
+    static_acceleration_mean = np.mean(static_acceleration)
+    static_acceleration_std = np.std(static_acceleration)
+    static_acceleration_max = max(static_acceleration)
+    static_acceleration_inversion_rate = rateOfInversions(static_acceleration, static_time)
+
+    # jerk features
+    static_jerk_mean = np.mean(static_jerk)
+    static_jerk_std = np.std(static_jerk)
+    static_jerk_max = max(static_jerk)
+    static_jerk_inversion_rate = rateOfInversions(static_jerk, static_time)
+
+    # basic pressure features
+    static_pressure_mean = np.mean(static_pressure)
+    static_pressure_std = np.std(static_pressure)
+    static_pressure_max = max(static_pressure)
+    static_pressure_inversion_rate = rateOfInversions(static_pressure, static_time)
+
+    # curvature rate of inversion
+    static_curv_inversion_rate = rateOfInversions(static_curvature, static_time)
+
+    # skewness & kurtosis
+    static_x_skewness = skew(static_x)
+    static_y_skewness = skew(static_y)
+    static_x_kurtosis = kurtosis(static_x)
+    static_y_kurtosis = kurtosis(static_y)
+    
+    static_vel_skewness = skew(static_velocity)
+    static_vel_kurtosis = kurtosis(static_velocity)
+
+    static_accel_skewness = skew(static_acceleration)
+    static_accel_kurtosis = kurtosis(static_acceleration)
+
+    static_jerk_skewness = skew(static_jerk)
+    static_jerk_kurtosis = kurtosis(static_jerk)
+
+    static_pressure_skewness = skew(static_pressure)
+    static_pressure_kurtosis = kurtosis(static_pressure)
+
+    static_curv_skewness = skew(static_curvature)
+    static_curv_kurtosis = kurtosis(static_curvature)
+
+    # fourier transform pressure
+    static_pressure_low_freq, static_pressure_high_freq, static_pressure_bandpass_freq = fourierFreqCalc(static_pressure_main, static_time, 0.12, 0.3, 0.8)
+
+    # fourier transform altitude
+    static_altitude_low_freq, static_altitude_high_freq, static_altitude_bandpass_freq = fourierFreqCalc(static_altitude, static_time, 0.12, 0.25, 0.6)
+
+    # pressure vs. time linear regression fit
+    static_pressure_reg_main_r2, static_pressure_reg_main_x0, static_pressure_reg_main_x1, static_pressure_reg_main_sumresid = time_regression(static_pressure_main)
+
+    # curvature vs. time logarithmic regression fit
+    static_curv_reg_r2, static_curv_reg_x0, static_curv_reg_x1, static_curv_reg_sumresid = nonlinear_time_regression(static_curvature, func_log)
+
+    # velocity vs. time linear regression fit
+    static_velocity_reg_r2, static_velocity_reg_x0, static_velocity_reg_x1, static_velocity_reg_sumresid = time_regression(static_velocity)
+
+    # linear regression fit for velocity vs. radius
+    static_VR_reg_r2, static_VR_reg_x0, static_VR_reg_x1, static_VR_reg_sumresid = nontime_regression(static_velocity, static_radius)
+
+    # inversely proportional fit for curvature vs. velocity
+    static_CV_reg_r2, static_CV_reg_x0, static_CV_reg_x1, static_CV_reg_sumresid = nonlinear_nontime_regression(static_curvature, static_velocity, func_inv)
+
+    # radius vs. theta linear regression fit 
+    static_RT_reg_r2, static_RT_reg_x0, static_RT_reg_x1, static_RT_reg_sumresid = nontime_regression(static_radius, static_theta)
+
+    static_rdot_mean = np.mean(static_rdot)
+    static_rdot_std = np.std(static_rdot)
+    static_tdot_mean = np.mean(static_tdot)
+    static_tdot_std = np.std(static_tdot)
+    static_rdotdot_mean = np.mean(static_rdotdot)
+    static_rdotdot_std = np.std(static_rdotdot)
+    static_tdotdot_mean = np.mean(static_tdotdot)
+    static_tdotdot_std = np.std(static_tdotdot)
+    static_drdtheta_mean = np.mean(static_drdtheta)
+    static_drdtheta_std = np.std(static_drdtheta)
+
+    # pressure rising & falling duration/range
+    static_pressure_rising_duration = static_time[static_risingIndex] - static_time[0]
+    static_pressure_rising_range = static_pressure[static_risingIndex] - static_pressure[0]
+    static_pressure_falling_duration = static_time[len(static_time)-1] - static_time[static_fallingIndex]
+    static_pressure_falling_range = static_pressure[static_fallingIndex] - static_pressure[len(static_time)-1]
+
+    # overall duration
+    static_duration = static_time[-1] - static_time[0]
+
+    return (static_velocity_mean, static_velocity_max, static_velocity_std, static_nvv, static_velocity_inversion_rate,
+    static_acceleration_mean, static_acceleration_max, static_acceleration_std, static_acceleration_inversion_rate,
+    static_jerk_mean, static_jerk_max, static_jerk_std, static_jerk_inversion_rate,
+    static_duration, static_curv_inversion_rate,
+    static_pressure_mean, static_pressure_max, static_pressure_std, static_pressure_inversion_rate,
+    static_x_entropy, static_y_entropy, static_x_skewness, static_y_skewness, static_x_kurtosis, static_y_kurtosis,
+    static_vel_skewness, static_vel_kurtosis, static_accel_skewness, static_accel_kurtosis, static_jerk_skewness, static_jerk_kurtosis,
+    static_pressure_skewness, static_pressure_kurtosis, static_curv_skewness, static_curv_kurtosis,
+    static_pressure_high_freq, static_pressure_low_freq, static_pressure_bandpass_freq, 
+    static_altitude_high_freq, static_altitude_low_freq, static_altitude_bandpass_freq,
+    static_pressure_reg_main_r2, static_pressure_reg_main_x0, static_pressure_reg_main_x1, static_pressure_reg_main_sumresid,
+    static_curv_reg_r2, static_curv_reg_x0, static_curv_reg_x1, static_curv_reg_sumresid,
+    static_velocity_reg_r2, static_velocity_reg_x0, static_velocity_reg_x1, static_velocity_reg_sumresid,
+    static_VR_reg_r2, static_VR_reg_x0, static_VR_reg_x1, static_VR_reg_sumresid, 
+    static_CV_reg_r2, static_CV_reg_x0, static_CV_reg_x1, static_CV_reg_sumresid, 
+    static_RT_reg_r2, static_RT_reg_x0, static_RT_reg_x1, static_RT_reg_sumresid, 
+    static_rdot_mean, static_rdot_std, static_tdot_mean, static_tdot_std, 
+    static_rdotdot_mean, static_rdotdot_std, static_tdotdot_mean, static_tdotdot_std, 
+    static_drdtheta_mean, static_drdtheta_std, 
+    static_pressure_rising_duration, static_pressure_rising_range, static_pressure_falling_duration, static_pressure_falling_range)
+
+''' Calculate all dynamic features '''
+
+'''
+Parameter: filename - file path of patient csv
+Returns: dynamic features
+'''
+
+def dynamic_calculate(filename):
+    # entropy:
+    dynamic_x_entropy = entropyCalc(dynamic_x)
+    dynamic_y_entropy = entropyCalc(dynamic_y)
+
+    # kinematic features
+    # velocity features
+    dynamic_velocity_mean = np.mean(dynamic_velocity)
+    dynamic_velocity_std = np.std(dynamic_velocity)
+    dynamic_velocity_max = max(dynamic_velocity)
+    dynamic_velocity_inversion_rate = rateOfInversions(dynamic_velocity, dynamic_time)
+    dynamic_nvv = nvv(dynamic_velocity, dynamic_time)
+
+    # acceleration features
+    dynamic_acceleration_mean = np.mean(dynamic_acceleration)
+    dynamic_acceleration_std = np.std(dynamic_acceleration)
+    dynamic_acceleration_max = max(dynamic_acceleration)
+    dynamic_acceleration_inversion_rate = rateOfInversions(dynamic_acceleration, dynamic_time)
+
+    # jerk features
+    dynamic_jerk_mean = np.mean(dynamic_jerk)
+    dynamic_jerk_std = np.std(dynamic_jerk)
+    dynamic_jerk_max = max(dynamic_jerk)
+    dynamic_jerk_inversion_rate = rateOfInversions(dynamic_jerk, dynamic_time)
+
+    # basic pressure features
+    dynamic_pressure_mean = np.mean(dynamic_pressure)
+    dynamic_pressure_std = np.std(dynamic_pressure)
+    dynamic_pressure_max = max(dynamic_pressure)
+    dynamic_pressure_inversion_rate = rateOfInversions(dynamic_pressure, dynamic_time)
+
+    # curvature rate of inversion
+    dynamic_curv_inversion_rate = rateOfInversions(dynamic_curvature, dynamic_time)
+
+    # skewness & kurtosis
+    dynamic_x_skewness = skew(dynamic_x)
+    dynamic_y_skewness = skew(dynamic_y)
+    dynamic_x_kurtosis = kurtosis(dynamic_x)
+    dynamic_y_kurtosis = kurtosis(dynamic_y)
+
+    dynamic_vel_skewness = skew(dynamic_velocity)
+    dynamic_vel_kurtosis = kurtosis(dynamic_velocity)
+
+    dynamic_accel_skewness = skew(dynamic_acceleration)
+    dynamic_accel_kurtosis = kurtosis(dynamic_acceleration)
+
+    dynamic_jerk_skewness = skew(dynamic_jerk)
+    dynamic_jerk_kurtosis = kurtosis(dynamic_jerk)
+
+    dynamic_pressure_skewness = skew(dynamic_pressure)
+    dynamic_pressure_kurtosis = kurtosis(dynamic_pressure)
+
+    dynamic_curv_skewness = skew(dynamic_curvature)
+    dynamic_curv_kurtosis = kurtosis(dynamic_curvature)
+
+    # fourier transform pressure
+    dynamic_pressure_low_freq, dynamic_pressure_high_freq, dynamic_pressure_bandpass_freq = fourierFreqCalc(dynamic_pressure_main, dynamic_time, 0.12, 0.3, 0.8)
+
+    # fourier transform altitude
+    dynamic_altitude_low_freq, dynamic_altitude_high_freq, dynamic_altitude_bandpass_freq = fourierFreqCalc(dynamic_altitude, dynamic_time, 0.12, 0.25, 0.6)
+
+    # pressure vs. time linear regression fit
+    dynamic_pressure_reg_main_r2, dynamic_pressure_reg_main_x0, dynamic_pressure_reg_main_x1, dynamic_pressure_reg_main_sumresid = time_regression(dynamic_pressure_main)
+
+    # curvature vs. time logarithmic regression fit
+    dynamic_curv_reg_r2, dynamic_curv_reg_x0, dynamic_curv_reg_x1, dynamic_curv_reg_sumresid = nonlinear_time_regression(dynamic_curvature, func_log)
+
+    # velocity vs. time linear regression fit
+    dynamic_velocity_reg_r2, dynamic_velocity_reg_x0, dynamic_velocity_reg_x1, dynamic_velocity_reg_sumresid = time_regression(dynamic_velocity)
+
+    # linear regression fit for velocity vs. radius
+    dynamic_VR_reg_r2, dynamic_VR_reg_x0, dynamic_VR_reg_x1, dynamic_VR_reg_sumresid = nontime_regression(dynamic_velocity, dynamic_radius)
+
+    # inversely proportional fit for curvature vs. velocity
+    dynamic_CV_reg_r2, dynamic_CV_reg_x0, dynamic_CV_reg_x1, dynamic_CV_reg_sumresid = nonlinear_nontime_regression(dynamic_curvature, dynamic_velocity, func_inv)
+
+    # radius vs. theta linear regression fit
+    dynamic_RT_reg_r2, dynamic_RT_reg_x0, dynamic_RT_reg_x1, dynamic_RT_reg_sumresid = nontime_regression(dynamic_radius, dynamic_theta)
+
+    dynamic_rdot_mean = np.mean(dynamic_rdot)
+    dynamic_rdot_std = np.std(dynamic_rdot)
+    dynamic_tdot_mean = np.mean(dynamic_tdot)
+    dynamic_tdot_std = np.std(dynamic_tdot)
+    dynamic_rdotdot_mean = np.mean(dynamic_rdotdot)
+    dynamic_rdotdot_std = np.std(dynamic_rdotdot)
+    dynamic_tdotdot_mean = np.mean(dynamic_tdotdot)
+    dynamic_tdotdot_std = np.std(dynamic_tdotdot)
+    dynamic_drdtheta_mean = np.mean(dynamic_drdtheta)
+    dynamic_drdtheta_std = np.std(dynamic_drdtheta)
+
+    # pressure rising & falling duration/range
+    dynamic_pressure_rising_duration = dynamic_time[dynamic_risingIndex] - dynamic_time[0]
+    dynamic_pressure_rising_range = dynamic_pressure[dynamic_risingIndex] - dynamic_pressure[0]
+    dynamic_pressure_falling_duration = dynamic_time[len(dynamic_time)-1] - dynamic_time[dynamic_fallingIndex]
+    dynamic_pressure_falling_range = dynamic_pressure[dynamic_fallingIndex] - dynamic_pressure[len(dynamic_time)-1]
+
+    # overall duration
+    dynamic_duration = dynamic_time[-1] - dynamic_time[0]
+
+    return (dynamic_velocity_mean, dynamic_velocity_max, dynamic_velocity_std, dynamic_nvv, dynamic_velocity_inversion_rate,
+    dynamic_acceleration_mean, dynamic_acceleration_max, dynamic_acceleration_std, dynamic_acceleration_inversion_rate,
+    dynamic_jerk_mean, dynamic_jerk_max, dynamic_jerk_std, dynamic_jerk_inversion_rate,
+    dynamic_duration, dynamic_curv_inversion_rate,
+    dynamic_pressure_mean, dynamic_pressure_max, dynamic_pressure_std, dynamic_pressure_inversion_rate,
+    dynamic_x_entropy, dynamic_y_entropy, dynamic_x_skewness, dynamic_y_skewness, dynamic_x_kurtosis, dynamic_y_kurtosis,
+    dynamic_vel_skewness, dynamic_vel_kurtosis, dynamic_accel_skewness, dynamic_accel_kurtosis, dynamic_jerk_skewness, dynamic_jerk_kurtosis,
+    dynamic_pressure_skewness, dynamic_pressure_kurtosis, dynamic_curv_skewness, dynamic_curv_kurtosis,
+    dynamic_pressure_high_freq, dynamic_pressure_low_freq, dynamic_pressure_bandpass_freq,
+    dynamic_altitude_high_freq, dynamic_altitude_low_freq, dynamic_altitude_bandpass_freq,
+    dynamic_pressure_reg_main_r2, dynamic_pressure_reg_main_x0, dynamic_pressure_reg_main_x1, dynamic_pressure_reg_main_sumresid,
+    dynamic_curv_reg_r2, dynamic_curv_reg_x0, dynamic_curv_reg_x1, dynamic_curv_reg_sumresid,
+    dynamic_velocity_reg_r2, dynamic_velocity_reg_x0, dynamic_velocity_reg_x1, dynamic_velocity_reg_sumresid,
+    dynamic_VR_reg_r2, dynamic_VR_reg_x0, dynamic_VR_reg_x1, dynamic_VR_reg_sumresid,
+    dynamic_CV_reg_r2, dynamic_CV_reg_x0, dynamic_CV_reg_x1, dynamic_CV_reg_sumresid,
+    dynamic_RT_reg_r2, dynamic_RT_reg_x0, dynamic_RT_reg_x1, dynamic_RT_reg_sumresid,
+    dynamic_rdot_mean, dynamic_rdot_std, dynamic_tdot_mean, dynamic_tdot_std,
+    dynamic_rdotdot_mean, dynamic_rdotdot_std, dynamic_tdotdot_mean, dynamic_tdotdot_std,
+    dynamic_drdtheta_mean, dynamic_drdtheta_std,
+    dynamic_pressure_rising_duration, dynamic_pressure_rising_range, dynamic_pressure_falling_duration, dynamic_pressure_falling_range)
+
+# =============================================================================================================================
+
+# Feature Selection Functions
+
+''' Run the feature selection functions on the dataframes read in from the CSVs (Static_HW_features.csv & Dynamic_HW_features.csv) '''
+ # (include features we want to include, and whether static or dynamic)
